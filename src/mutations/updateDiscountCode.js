@@ -19,12 +19,16 @@ export default async function updateDiscountCode(context, input) {
 
   DiscountCodesSchema.validate(discountCodeInput);
 
+  // Force code to be lower case
+  const code = discountCodeInput.code.toLowerCase();
+
   await Discounts.updateOne({
     _id,
     shopId
   }, {
     $set: {
-      ...discountCodeInput
+      ...discountCodeInput,
+      code
     }
   });
 

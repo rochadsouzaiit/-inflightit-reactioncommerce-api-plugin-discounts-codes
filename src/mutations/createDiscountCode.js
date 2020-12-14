@@ -17,10 +17,14 @@ export default async function createDiscountCode(context, input) {
 
   await context.validatePermissions("reaction:legacy:discounts", "create", { shopId });
 
+  // Force code to be lower case
+  const code = discountCodeInput.code.toLowerCase();
+
   const discountCode = {
     _id: Random.id(),
     shopId,
-    ...discountCodeInput
+    ...discountCodeInput,
+    code
   };
 
   DiscountCodesSchema.validate(discountCode);

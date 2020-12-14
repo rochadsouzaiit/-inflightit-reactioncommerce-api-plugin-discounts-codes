@@ -27,9 +27,12 @@ const inputSchema = new SimpleSchema({
 export default async function applyDiscountCodeToCart(context, input) {
   inputSchema.validate(input);
 
-  const { cartId, discountCode, shopId, token } = input;
+  const { cartId, shopId, token } = input;
   const { collections, userId } = context;
   const { Cart, Discounts } = collections;
+
+  // Force code to be lower case
+  const discountCode = input.discountCode.toLowerCase();
 
   let userCount = 0;
   let orderCount = 0;
@@ -55,9 +58,13 @@ export default async function applyDiscountCodeToCart(context, input) {
   const discount = await Discounts.findOne({ code: discountCode });
   if (!discount) throw new ReactionError("not-found", `No discount found for code ${discountCode}`);
 
+
+
   const { conditions } = discount;
   let accountLimitExceeded = false;
   let discountLimitExceeded = false;
+  let discountDisabled = false;
+  let discountOutdated = false;
 
   // existing usage count
   if (discount.transactions) {
@@ -67,14 +74,30 @@ export default async function applyDiscountCodeToCart(context, input) {
     userCount = transactionCount.get(userId);
     orderCount = orders.length;
   }
+
+  const cartsWithDiscount = await Cart.find({
+    accountId: userId,
+    "billing.paymentPluginName": "discount-codes",
+    "billing.data.discountId": discount._id
+  }).toArray();
+  const cartsCount = cartsWithDiscount.length;
   // check limits
   if (conditions) {
-    if (conditions.accountLimit) accountLimitExceeded = conditions.accountLimit <= userCount;
-    if (conditions.redemptionLimit) discountLimitExceeded = conditions.redemptionLimit <= orderCount;
+
+    discountDisabled = !discount.conditions.enabled;
+
+    if (!!conditions.order && conditions.order.endDate)
+      discountOutdated = new Date(conditions.order.endDate) < new Date();
+
+    if (conditions.accountLimit)
+      accountLimitExceeded = conditions.accountLimit <= userCount || conditions.accountLimit <= cartsCount;
+    if (conditions.redemptionLimit)
+      discountLimitExceeded =
+        conditions.redemptionLimit <= orderCount;
   }
 
   // validate basic limit handling
-  if (accountLimitExceeded === true || discountLimitExceeded === true) {
+  if ([accountLimitExceeded, discountLimitExceeded, discountDisabled, discountOutdated].some(v => v === true)) {
     throw new ReactionError("error-occurred", "Code is expired");
   }
 
