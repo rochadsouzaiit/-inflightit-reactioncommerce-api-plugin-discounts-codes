@@ -29,7 +29,7 @@ export default async function applyDiscountCodeToCart(context, input) {
 
   const { cartId, shopId, token } = input;
   const { collections, userId } = context;
-  const { Cart, Discounts } = collections;
+  const { Cart, Discounts, users } = collections;
 
   // Force code to be lower case
   const discountCode = input.discountCode.toLowerCase();
@@ -53,11 +53,14 @@ export default async function applyDiscountCodeToCart(context, input) {
     });
   }
 
+  // Checks if user exist.
+  const user = await users.findOne({_id: userId});
+  if (!user) throw new ReactionError("not-found", "SERVER.ECOMMERCE.GENERAL.USER_DOES_NOT_EXIST");
+
   const objectToApplyDiscount = cart;
 
   const discount = await Discounts.findOne({ code: discountCode });
   if (!discount) throw new ReactionError("not-found", `No discount found for code ${discountCode}`);
-
 
 
   const { conditions } = discount;
@@ -65,6 +68,7 @@ export default async function applyDiscountCodeToCart(context, input) {
   let discountLimitExceeded = false;
   let discountDisabled = false;
   let discountOutdated = false;
+  let discountOutOfMinAndMaxBoundaries = false;
 
   // existing usage count
   if (discount.transactions) {
@@ -76,30 +80,41 @@ export default async function applyDiscountCodeToCart(context, input) {
   }
 
   const cartsWithDiscount = await Cart.find({
-    accountId: userId,
+    "accountId": userId,
     "billing.paymentPluginName": "discount-codes",
     "billing.data.discountId": discount._id
   }).toArray();
   const cartsCount = cartsWithDiscount.length;
   // check limits
   if (conditions) {
-
     discountDisabled = !discount.conditions.enabled;
 
-    if (!!conditions.order && conditions.order.endDate)
-      discountOutdated = new Date(conditions.order.endDate) < new Date();
+    const {order} = conditions;
+    if (!!order) {
+      if (!!order.endDate) { discountOutdated = new Date(conditions.order.endDate) < new Date(); }
 
-    if (conditions.accountLimit)
-      accountLimitExceeded = conditions.accountLimit <= userCount || conditions.accountLimit <= cartsCount;
-    if (conditions.redemptionLimit)
+      // TODO: WARNING!! This is an hammer since min & max shoulb user for order total amout but is being used for _strapi user id_;
+      if (order.min || order.max) {
+        discountOutOfMinAndMaxBoundaries = user.strapi_user < (order.min || 0) || user.strapi_user > (order.max || Number.POSITIVE_INFINITY);
+      }
+    }
+
+
+    if (conditions.accountLimit) { accountLimitExceeded = conditions.accountLimit <= userCount || conditions.accountLimit <= cartsCount; }
+    if (conditions.redemptionLimit) {
       discountLimitExceeded =
         conditions.redemptionLimit <= orderCount;
+    }
   }
 
-  // validate basic limit handling
-  if ([accountLimitExceeded, discountLimitExceeded, discountDisabled, discountOutdated].some(v => v === true)) {
-    throw new ReactionError("error-occurred", "Code is expired");
-  }
+
+
+  if (discountOutOfMinAndMaxBoundaries)  throw new ReactionError("error-occurred", "SERVER.ECOMMERCE.DISCOUNTS.USER_ID_OUT_OF_BOUNDS");
+  if (discountLimitExceeded)  throw new ReactionError("error-occurred", "SERVER.ECOMMERCE.DISCOUNTS.DISCOUNT_LIMIT_EXCEEDED");
+  if (accountLimitExceeded)  throw new ReactionError("error-occurred", "SERVER.ECOMMERCE.DISCOUNTS.USER_LIMIT_EXCEEDED");
+  if (discountDisabled)  throw new ReactionError("error-occurred", "SERVER.ECOMMERCE.DISCOUNTS.DISABLED");
+  if (discountOutdated)  throw new ReactionError("error-occurred", "SERVER.ECOMMERCE.DISCOUNTS.OUTDATED");
+
 
   if (!cart.billing) {
     cart.billing = [];
