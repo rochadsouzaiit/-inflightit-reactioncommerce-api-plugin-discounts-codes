@@ -54,13 +54,18 @@ export default async function applyDiscountCodeToCart(context, input) {
   }
 
   // Checks if user exist.
-  const user = await users.findOne({_id: userId});
+  const user = await users.findOne({ _id: userId });
   if (!user) throw new ReactionError("not-found", "SERVER.ECOMMERCE.GENERAL.USER_DOES_NOT_EXIST");
 
   const objectToApplyDiscount = cart;
 
   const discount = await Discounts.findOne({ code: discountCode });
-  if (!discount) throw new ReactionError("not-found", `No discount found for code ${discountCode}`);
+  if (!discount) {
+    throw new ReactionError(
+      "not-found",
+      "SERVER.ECOMMERCE.GENERAL.DISCOUNT_DOES_NOT_EXIST"
+    );
+  }
 
 
   const { conditions } = discount;
@@ -73,8 +78,8 @@ export default async function applyDiscountCodeToCart(context, input) {
 
   // existing usage count
   if (discount.transactions) {
-    const users = Array.from(discount.transactions, (trans) => trans.userId);
-    const transactionCount = new Map([...new Set(users)].map((userX) => [userX, users.filter((userY) => userY === userX).length]));
+    const users_ = Array.from(discount.transactions, (trans) => trans.userId);
+    const transactionCount = new Map([...new Set(users_)].map((userX) => [userX, users_.filter((userY) => userY === userX).length]));
     const orders = Array.from(discount.transactions, (trans) => trans.cartId);
     userCount = transactionCount.get(userId);
     orderCount = orders.length;
@@ -88,37 +93,84 @@ export default async function applyDiscountCodeToCart(context, input) {
   const cartsCount = cartsWithDiscount.length;
   // check limits
   if (conditions) {
-
-    const { enabled, order, accountLimit, redemptionLimit, permissions } = conditions;
+    const {
+      enabled,
+      order,
+      accountLimit,
+      redemptionLimit,
+      permissions
+    } = conditions;
 
     discountDisabled = !enabled;
 
-    if (!!order) {
-      if (!!order.endDate) 
+    if (order) {
+      if (order.endDate) {
         discountOutdated = new Date(order.endDate) < new Date();
+      }
 
       // TODO: WARNING!! This is an hammer since min & max shoulb user for order total amout but is being used for _strapi user id_;
-      if (order.min || order.max) 
-        discountOutOfMinAndMaxBoundaries = user.strapi_user < (order.min || 0) || user.strapi_user > (order.max || Number.POSITIVE_INFINITY);      
+      if (order.min || order.max) {
+        discountOutOfMinAndMaxBoundaries =
+
+
+                           user.strapi_user < (order.min || 0) ||
+
+
+                         user.strapi_user > (order.max || Number.POSITIVE_INFINITY);
+      }
     }
 
-    if (accountLimit) 
-      accountLimitExceeded = accountLimit <= userCount || accountLimit <= cartsCount;
-      
-    if (redemptionLimit) 
+    if (accountLimit) {
+      accountLimitExceeded =
+
+        accountLimit <= userCount || accountLimit <= cartsCount;
+    }
+
+    if (redemptionLimit) {
       discountLimitExceeded = redemptionLimit <= orderCount;
+    }
 
     // // TODO: "CONVERSE" This is an hammer. If shop ID is in permissions then it is not an adherent store.
-    if (!!permissions) notAdherentStores = permissions.includes(shopId);
+    if (permissions) notAdherentStores = permissions.includes(shopId);
   }
 
 
-  if (notAdherentStores)  throw new ReactionError("error-occurred", "SERVER.ECOMMERCE.DISCOUNTS.NOT_ADHERENT_STORE");
-  if (discountOutOfMinAndMaxBoundaries)  throw new ReactionError("error-occurred", "SERVER.ECOMMERCE.DISCOUNTS.USER_ID_OUT_OF_BOUNDS");
-  if (discountLimitExceeded)  throw new ReactionError("error-occurred", "SERVER.ECOMMERCE.DISCOUNTS.DISCOUNT_LIMIT_EXCEEDED");
-  if (accountLimitExceeded)  throw new ReactionError("error-occurred", "SERVER.ECOMMERCE.DISCOUNTS.USER_LIMIT_EXCEEDED");
-  if (discountDisabled)  throw new ReactionError("error-occurred", "SERVER.ECOMMERCE.DISCOUNTS.DISABLED");
-  if (discountOutdated)  throw new ReactionError("error-occurred", "SERVER.ECOMMERCE.DISCOUNTS.OUTDATED");
+  if (notAdherentStores) {
+    throw new ReactionError(
+      "error-occurred",
+      "SERVER.ECOMMERCE.DISCOUNTS.NOT_ADHERENT_STORE"
+    );
+  }
+  if (discountOutOfMinAndMaxBoundaries) {
+    throw new ReactionError(
+      "error-occurred",
+      "SERVER.ECOMMERCE.DISCOUNTS.USER_ID_OUT_OF_BOUNDS"
+    );
+  }
+  if (discountLimitExceeded) {
+    throw new ReactionError(
+      "error-occurred",
+      "SERVER.ECOMMERCE.DISCOUNTS.DISCOUNT_LIMIT_EXCEEDED"
+    );
+  }
+  if (accountLimitExceeded) {
+    throw new ReactionError(
+      "error-occurred",
+      "SERVER.ECOMMERCE.DISCOUNTS.USER_LIMIT_EXCEEDED"
+    );
+  }
+  if (discountDisabled) {
+    throw new ReactionError(
+      "error-occurred",
+      "SERVER.ECOMMERCE.DISCOUNTS.DISABLED"
+    );
+  }
+  if (discountOutdated) {
+    throw new ReactionError(
+      "error-occurred",
+      "SERVER.ECOMMERCE.DISCOUNTS.OUTDATED"
+    );
+  }
 
 
   if (!cart.billing) {
