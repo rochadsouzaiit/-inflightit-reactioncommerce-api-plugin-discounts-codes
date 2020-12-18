@@ -24,7 +24,7 @@ export default async function deleteOutdatedDiscountsFromCartsFn(context) {
       },
       billing: { $exists: true },
     },
-    { $unset: { billing: 1 } }
+    { $unset: { billing: 1 }, $set: { discount: 0 } }
   );
   const timeEnd = new Date();
   const timeDiff = timeEnd.getTime() - timeStart.getTime();
