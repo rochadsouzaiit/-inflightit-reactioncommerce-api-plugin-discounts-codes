@@ -64,6 +64,7 @@ export default async function applyDiscountCodeToCart(context, input) {
 
 
   const { conditions } = discount;
+  let notAdherentStores = false;
   let accountLimitExceeded = false;
   let discountLimitExceeded = false;
   let discountDisabled = false;
@@ -87,28 +88,32 @@ export default async function applyDiscountCodeToCart(context, input) {
   const cartsCount = cartsWithDiscount.length;
   // check limits
   if (conditions) {
-    discountDisabled = !discount.conditions.enabled;
 
-    const {order} = conditions;
+    const { enabled, order, accountLimit, redemptionLimit, permissions } = conditions;
+
+    discountDisabled = !enabled;
+
     if (!!order) {
-      if (!!order.endDate) { discountOutdated = new Date(conditions.order.endDate) < new Date(); }
+      if (!!order.endDate) 
+        discountOutdated = new Date(order.endDate) < new Date();
 
       // TODO: WARNING!! This is an hammer since min & max shoulb user for order total amout but is being used for _strapi user id_;
-      if (order.min || order.max) {
-        discountOutOfMinAndMaxBoundaries = user.strapi_user < (order.min || 0) || user.strapi_user > (order.max || Number.POSITIVE_INFINITY);
-      }
+      if (order.min || order.max) 
+        discountOutOfMinAndMaxBoundaries = user.strapi_user < (order.min || 0) || user.strapi_user > (order.max || Number.POSITIVE_INFINITY);      
     }
 
+    if (accountLimit) 
+      accountLimitExceeded = accountLimit <= userCount || accountLimit <= cartsCount;
+      
+    if (redemptionLimit) 
+      discountLimitExceeded = redemptionLimit <= orderCount;
 
-    if (conditions.accountLimit) { accountLimitExceeded = conditions.accountLimit <= userCount || conditions.accountLimit <= cartsCount; }
-    if (conditions.redemptionLimit) {
-      discountLimitExceeded =
-        conditions.redemptionLimit <= orderCount;
-    }
+    // // TODO: "CONVERSE" This is an hammer. If shop ID is in permissions then it is not an adherent store.
+    if (!!permissions) notAdherentStores = permissions.includes(shopId);
   }
 
 
-
+  if (notAdherentStores)  throw new ReactionError("error-occurred", "SERVER.ECOMMERCE.DISCOUNTS.NOT_ADHERENT_STORE");
   if (discountOutOfMinAndMaxBoundaries)  throw new ReactionError("error-occurred", "SERVER.ECOMMERCE.DISCOUNTS.USER_ID_OUT_OF_BOUNDS");
   if (discountLimitExceeded)  throw new ReactionError("error-occurred", "SERVER.ECOMMERCE.DISCOUNTS.DISCOUNT_LIMIT_EXCEEDED");
   if (accountLimitExceeded)  throw new ReactionError("error-occurred", "SERVER.ECOMMERCE.DISCOUNTS.USER_LIMIT_EXCEEDED");
