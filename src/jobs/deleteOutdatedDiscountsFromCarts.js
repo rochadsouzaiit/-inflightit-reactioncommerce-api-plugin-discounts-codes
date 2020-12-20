@@ -17,9 +17,8 @@ export default async function deleteOutdatedDiscountsFromCarts(context) {
         await deleteOutdatedDiscountsFromCartsFn(context);
         job.done(`${jobType} job done`, { repeatId: true });
       } catch (error) {
-        console.log(JSON.stringify(error));
-        job.fail(`Failed to generate sitemap. Error: ${error}`);
+        job.fail(`Failed to generate sitemap. Error: ${JSON.stringify(error)}`);
       }
-    },
+    }
   });
 }

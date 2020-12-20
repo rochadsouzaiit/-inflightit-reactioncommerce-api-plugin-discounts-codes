@@ -10,19 +10,19 @@ export default async function deleteOutdatedDiscountsFromCartsFn(context) {
   Logger.debug("Deleting outdated discounts from carts");
   const timeStart = new Date();
   const {
-    collections: { Discounts, Cart },
+    collections: { Cart }
   } = context;
 
   // Get abandoned carts and remove vouchers
   const twoHoursAgo = new Date();
-  twoHoursAgo.setHours(d.getHours() - 2);
+  twoHoursAgo.setHours(twoHoursAgo.getHours() - 2);
 
   await Cart.updateMany(
     {
       updatedAt: {
-        $lt: twoHoursAgo,
+        $lt: twoHoursAgo
       },
-      billing: { $exists: true },
+      billing: { $exists: true }
     },
     { $unset: { billing: 1 }, $set: { discount: 0 } }
   );
