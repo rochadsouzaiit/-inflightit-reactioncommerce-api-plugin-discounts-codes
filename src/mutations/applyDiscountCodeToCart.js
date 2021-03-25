@@ -111,12 +111,8 @@ export default async function applyDiscountCodeToCart(context, input) {
       // TODO: WARNING!! This is an hammer since min & max shoulb user for order total amout but is being used for _strapi user id_;
       if (order.min || order.max) {
         discountOutOfMinAndMaxBoundaries =
-
-
-                           user.strapi_user < (order.min || 0) ||
-
-
-                         user.strapi_user > (order.max || Number.POSITIVE_INFINITY);
+          user.strapi_user < (order.min || 0) ||
+          user.strapi_user > (order.max || Number.POSITIVE_INFINITY);
       }
     }
 
