@@ -1,4 +1,5 @@
 import ReactionError from "@reactioncommerce/reaction-error";
+import { encodeDiscountOpaqueId } from "../xforms/id.js";
 
 /**
  * @name discountsFromCart
@@ -31,8 +32,7 @@ export default async function discountsFromCart(context, input) {
     owner: cart.accountId
   });
 
-
-  const appliedDiscounts = (cart.billing || []).map(({ _id, data }) => ({ _id, code: data.code }));
+  const appliedDiscounts = (cart.billing || []).map(({ _id, data }) => ({ _id: encodeDiscountOpaqueId(_id), code: data.code }));
 
   return appliedDiscounts;
 }
