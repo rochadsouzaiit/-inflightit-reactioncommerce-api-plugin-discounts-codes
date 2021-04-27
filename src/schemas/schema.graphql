@@ -72,6 +72,11 @@ type DiscountConditionOrder {
 
 "Conditions for a discount code to be applied"
 type DiscountConditions {
+ 
+  
+  "County"
+  county: String
+
   "Account Limit"
   accountLimit: Int
 
@@ -284,6 +289,10 @@ input DiscountConditionOrderInput {
 
 "Discount conditions input type"
 input DiscountConditionsInput {
+
+  "Discount Code"
+  code: String!
+
   "Account Limit"
   accountLimit: Int
 

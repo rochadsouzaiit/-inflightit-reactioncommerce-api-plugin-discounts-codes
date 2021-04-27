@@ -79,6 +79,11 @@ export const DiscountCodes = new SimpleSchema({
     label: "Conditions",
     defaultValue: {}
   },
+  "conditions.county": {
+    type: String,
+    label: "County",
+    optional: true
+  },
   "conditions.accountLimit": {
     type: SimpleSchema.Integer,
     label: "Account Limit",

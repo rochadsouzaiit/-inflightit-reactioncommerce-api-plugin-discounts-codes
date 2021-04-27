@@ -2,6 +2,7 @@ import SimpleSchema from "simpl-schema";
 import Random from "@reactioncommerce/random";
 import ReactionError from "@reactioncommerce/reaction-error";
 import getCart from "../util/getCart.js";
+import isShopCountyValidForDiscount from "../util/isShopCountyValidForDiscount.js";
 
 const inputSchema = new SimpleSchema({
   cartId: String,
@@ -29,14 +30,20 @@ export default async function applyDiscountCodeToCart(context, input) {
 
   const { cartId, shopId, token } = input;
   const { collections, userId } = context;
-  const { Cart, Discounts, users } = collections;
+  const { Cart, Discounts, Shops, AppSettings, users } = collections;
 
   // Force code to be lower case
   const discountCode = input.discountCode.toLowerCase();
 
   let userCount = 0;
   let orderCount = 0;
-  let cart = await getCart(context, shopId, cartId, { cartToken: token, throwIfNotFound: false });
+  let cart = await getCart(context, shopId, cartId, {
+    cartToken: token,
+    throwIfNotFound: false
+  });
+
+  const primaryShop = await Shops.findOne({ shopType: "primary" });
+  const shopSettings = await AppSettings.findOne({ shopId });
 
   // If we didn't find a cart, it means it belongs to another user,
   // not the currently logged in user.
@@ -47,26 +54,37 @@ export default async function applyDiscountCodeToCart(context, input) {
       throw new ReactionError("not-found", "Cart not found");
     }
 
-    await context.validatePermissions(`reaction:legacy:carts:${cartId}`, "update", {
-      shopId,
-      owner: cart.accountId
-    });
+    await context.validatePermissions(
+      `reaction:legacy:carts:${cartId}`,
+      "update",
+      {
+        shopId,
+        owner: cart.accountId
+      }
+    );
   }
 
   // Checks if user exist.
   const user = await users.findOne({ _id: userId });
-  if (!user) throw new ReactionError("not-found", "SERVER.ECOMMERCE.GENERAL.USER_DOES_NOT_EXIST");
+  if (!user) {
+    throw new ReactionError(
+      "not-found",
+      "SERVER.ECOMMERCE.GENERAL.USER_DOES_NOT_EXIST"
+    );
+  }
 
   const objectToApplyDiscount = cart;
 
-  const discount = await Discounts.findOne({ code: discountCode });
+  const discount = await Discounts.findOne({
+    code: discountCode,
+    shopId: { $in: [primaryShop._id, shopId] }
+  });
   if (!discount) {
     throw new ReactionError(
       "not-found",
       "SERVER.ECOMMERCE.GENERAL.DISCOUNT_DOES_NOT_EXIST"
     );
   }
-
 
   const { conditions } = discount;
   let notAdherentStores = false;
@@ -75,11 +93,15 @@ export default async function applyDiscountCodeToCart(context, input) {
   let discountDisabled = false;
   let discountOutdated = false;
   let discountOutOfMinAndMaxBoundaries = false;
+  let notValidCounty = false;
 
   // existing usage count
   if (discount.transactions) {
     const users_ = Array.from(discount.transactions, (trans) => trans.userId);
-    const transactionCount = new Map([...new Set(users_)].map((userX) => [userX, users_.filter((userY) => userY === userX).length]));
+    const transactionCount = new Map([...new Set(users_)].map((userX) => [
+      userX,
+      users_.filter((userY) => userY === userX).length
+    ]));
     const orders = Array.from(discount.transactions, (trans) => trans.cartId);
     userCount = transactionCount.get(userId);
     orderCount = orders.length;
@@ -96,6 +118,7 @@ export default async function applyDiscountCodeToCart(context, input) {
     const {
       enabled,
       order,
+      county,
       accountLimit,
       redemptionLimit,
       permissions
@@ -108,17 +131,27 @@ export default async function applyDiscountCodeToCart(context, input) {
         discountOutdated = new Date(order.endDate) < new Date();
       }
 
-      // TODO: WARNING!! This is an hammer since min & max shoulb user for order total amout but is being used for _strapi user id_;
       if (order.min || order.max) {
+        const cartTotal =
+          (cart.items || []).reduce(
+            (acc, currentItem) => acc + currentItem.subtotal.amount,
+            0
+          ) - (cart.discount || 0);
         discountOutOfMinAndMaxBoundaries =
-          user.strapi_user < (order.min || 0) ||
-          user.strapi_user > (order.max || Number.POSITIVE_INFINITY);
+          cartTotal < (order.min || 0) ||
+          cartTotal > (order.max || Number.POSITIVE_INFINITY);
       }
+    }
+
+    if (county) {
+      notValidCounty = !(await isShopCountyValidForDiscount(
+        shopSettings,
+        county
+      ));
     }
 
     if (accountLimit) {
       accountLimitExceeded =
-
         accountLimit <= userCount || accountLimit <= cartsCount;
     }
 
@@ -130,17 +163,24 @@ export default async function applyDiscountCodeToCart(context, input) {
     if (permissions) notAdherentStores = permissions.includes(shopId);
   }
 
-
   if (notAdherentStores) {
     throw new ReactionError(
       "error-occurred",
       "SERVER.ECOMMERCE.DISCOUNTS.NOT_ADHERENT_STORE"
     );
   }
-  if (discountOutOfMinAndMaxBoundaries) {
+  if (notValidCounty) {
     throw new ReactionError(
       "error-occurred",
-      "SERVER.ECOMMERCE.DISCOUNTS.USER_ID_OUT_OF_BOUNDS"
+      "SERVER.ECOMMERCE.DISCOUNTS.NOT_VALID_COUNTY"
+    );
+  }
+  if (discountOutOfMinAndMaxBoundaries) {
+    const { min, max } = conditions.order;
+    throw new ReactionError(
+      "error-occurred",
+      "SERVER.ECOMMERCE.DISCOUNTS.AMOUNT_OUT_OF_BOUNDS",
+      { min, max }
     );
   }
   if (discountLimitExceeded) {
@@ -167,7 +207,6 @@ export default async function applyDiscountCodeToCart(context, input) {
       "SERVER.ECOMMERCE.DISCOUNTS.OUTDATED"
     );
   }
-
 
   if (!cart.billing) {
     cart.billing = [];
